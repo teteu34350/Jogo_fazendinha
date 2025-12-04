@@ -1,147 +1,181 @@
 import pygame
+import time
 
 pygame.init()
 
-# ----- CONFIGURAÇÕES -----
 LARGURA, ALTURA = 800, 600
 TELA = pygame.display.set_mode((LARGURA, ALTURA))
-pygame.display.set_caption("Fazendinha + Inventário")
-
-FPS = 60
 clock = pygame.time.Clock()
 
-# ----- CORES -----
-VERDE = (46, 204, 113)
-MARROM = (139, 69, 19)
-TERRA_UMIDA = (100, 70, 20)
-PLANTA = (0, 170, 0)
-BRANCO = (255, 255, 255)
-PRETO = (0, 0, 0)
-AZUL = (80, 80, 255)
+# ----- FUNDO -----
+BACKGROUND = pygame.image.load("Jogo_fazendinha/sprites/background.png")
+BACKGROUND = pygame.transform.scale(BACKGROUND, (LARGURA, ALTURA))
 
-# ----- MAPA -----
-TAMANHO_TILE = 50
-plantacoes = {}
+# ----- CASA -----
+casa_img = pygame.image.load("Jogo_fazendinha/sprites/casa.png")
+casa_img = pygame.transform.scale(casa_img, (200, 160))
+casa_x = (LARGURA // 2) - 100
+casa_y = 10
 
-# ----- FERRAMENTAS -----
-FERRAMENTAS = ["MAO", "ENXADA", "REGADOR"]
-ferramenta_atual = 0
+# ----- LAGO -----
+lago_img = pygame.image.load("Jogo_fazendinha/sprites/lago.png")
+lago_img = pygame.transform.scale(lago_img, (200, 150))
 
-# ----- INVENTÁRIO -----
-inventario = {
-    "sementes": 10,
-    "colheitas": 0,
-    "dinheiro": 0
-}
+lago_x = LARGURA - 200 - 10   # canto direito
+lago_y = ALTURA - 150 - 10    # canto inferior
 
-# Fonte
-fonte = pygame.font.SysFont("Arial", 20)
+# ----- VACA (3 ESTADOS) -----
+vaca_imgs = [
+    pygame.transform.scale(pygame.image.load("Jogo_fazendinha/sprites/vaca-1.png"), (250, 250)),  # normal
+    pygame.transform.scale(pygame.image.load("Jogo_fazendinha/sprites/vaca-2.png"), (250, 250)),  # comendo
+    pygame.transform.scale(pygame.image.load("Jogo_fazendinha/sprites/vaca-3.png"), (250, 250)),  # leite pronto
+]
 
-def tile_pos(mouse):
-    return mouse[0] // TAMANHO_TILE, mouse[1] // TAMANHO_TILE
+vaca_estado = 0
+vaca_tempo = 0
+vaca_x = 20
+vaca_y = ALTURA - 250 - 20
 
+# ----- PERSONAGEM -----
+PLAYER_SPRITES = [
+    "Jogo_fazendinha/sprites/fazendeiro-1.png",
+    "Jogo_fazendinha/sprites/fazendeiro-2.png",
+    "Jogo_fazendinha/sprites/fazendeiro-3.png",
+    "Jogo_fazendinha/sprites/fazendeiro-4.png",
+]
 
-def desenhar_barra_ferramentas():
-    pygame.draw.rect(TELA, PRETO, (0, ALTURA - 60, LARGURA, 60))
+player_frames = [
+    pygame.transform.scale(pygame.image.load(img), (48, 48))
+    for img in PLAYER_SPRITES
+]
 
-    for i, nome in enumerate(FERRAMENTAS):
-        x = 10 + i * 160
-        y = ALTURA - 50
-        cor = AZUL if i == ferramenta_atual else BRANCO
-        pygame.draw.rect(TELA, cor, (x, y, 150, 40), 2)
-        texto = fonte.render(nome, True, BRANCO)
-        TELA.blit(texto, (x + 35, y + 10))
+player_x = 300
+player_y = 300
+player_largura = 48
+player_altura = 48
+velocidade = 3
 
+frame_index = 0
+frame_delay = 10
+frame_count = 0
 
-def desenhar_inventario():
-    caixa = pygame.Rect(LARGURA - 220, 10, 210, 100)
-    pygame.draw.rect(TELA, PRETO, caixa, 2)
+def colisao(px, py, ox, oy, ow, oh):
+    area_player = pygame.Rect(px, py, player_largura, player_altura)
+    area_obj = pygame.Rect(ox, oy, ow, oh)
+    return area_player.colliderect(area_obj)
 
-    t1 = fonte.render(f"Sementes: {inventario['sementes']}", True, PRETO)
-    t2 = fonte.render(f"Colheitas: {inventario['colheitas']}", True, PRETO)
-    t3 = fonte.render(f"Dinheiro: ${inventario['dinheiro']}", True, PRETO)
+# ----- CANTEIROS -----
+canteiro_img = pygame.image.load("Jogo_fazendinha/sprites/canteiro-1.png")
+canteiro_img = pygame.transform.scale(canteiro_img, (64, 64))
 
-    TELA.blit(t1, (LARGURA - 210, 20))
-    TELA.blit(t2, (LARGURA - 210, 50))
-    TELA.blit(t3, (LARGURA - 210, 80))
+plantio_img = pygame.image.load("Jogo_fazendinha/sprites/plantio.png")
+plantio_img = pygame.transform.scale(plantio_img, (64, 64))
 
+colheita_img = pygame.image.load("Jogo_fazendinha/sprites/colheita.png")
+colheita_img = pygame.transform.scale(colheita_img, (64, 64))
 
-# ----- LOOP PRINCIPAL -----
+canteiros = [
+    {"pos": (0, 0),   "estado": "vazio", "tempo": 0},
+    {"pos": (64, 0),  "estado": "vazio", "tempo": 0},
+    {"pos": (0, 64),  "estado": "vazio", "tempo": 0},
+    {"pos": (64, 64), "estado": "vazio", "tempo": 0},
+]
+
 rodando = True
 while rodando:
-    clock.tick(FPS)
+    agora = time.time()
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
+    for evento in pygame.event.get():
+        if evento.type == pygame.QUIT:
             rodando = False
 
-        # TROCAR FERRAMENTA
-        if event.type == pygame.KEYDOWN:
-            if event.key == pygame.K_1:
-                ferramenta_atual = 0
-            elif event.key == pygame.K_2:
-                ferramenta_atual = 1
-            elif event.key == pygame.K_3:
-                ferramenta_atual = 2
+        # ----- INTERAÇÃO CANTEIRO -----
+        if evento.type == pygame.KEYDOWN and evento.key == pygame.K_e:
+            for c in canteiros:
+                cx, cy = c["pos"]
+                if colisao(player_x, player_y, cx, cy, 64, 64):
 
-        # CLICK DO MOUSE (AÇÕES)
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            tx, ty = tile_pos(pygame.mouse.get_pos())
+                    if c["estado"] == "vazio":
+                        c["estado"] = "plantio"
+                        c["tempo"] = agora
+                        print("🌱 Plantado!")
 
-            if (tx, ty) not in plantacoes:
-                plantacoes[(tx, ty)] = {"estado": 0, "molhado": False}
+                    elif c["estado"] == "colheita":
+                        c["estado"] = "vazio"
+                        print("🧺 Colhido!")
 
-            tile = plantacoes[(tx, ty)]
+        # ----- INTERAÇÃO COM A VACA -----
+        if evento.type == pygame.KEYDOWN and evento.key == pygame.K_p:
+            if colisao(player_x, player_y, vaca_x, vaca_y, 250, 250):
 
-            # ----- MAO: colher ou limpar -----
-            if FERRAMENTAS[ferramenta_atual] == "MAO":
-                if tile["estado"] == 3:
-                    inventario["colheitas"] += 1
-                    plantacoes.pop((tx, ty))
-                else:
-                    plantacoes.pop((tx, ty))
+                if vaca_estado == 0:
+                    vaca_estado = 1
+                    vaca_tempo = agora
+                    print("🐄 Você alimentou a vaca!")
 
-            # ----- ENXADA: arar ou plantar -----
-            elif FERRAMENTAS[ferramenta_atual] == "ENXADA":
-                if tile["estado"] == 0:
-                    tile["estado"] = 1
-                elif tile["estado"] == 1:
-                    if inventario["sementes"] > 0:
-                        inventario["sementes"] -= 1
-                        tile["estado"] = 2
+                elif vaca_estado == 2:
+                    print("🥛 Você coletou o leite!")
+                    vaca_estado = 0
 
-            # ----- REGADOR: molhar ou crescer -----
-            elif FERRAMENTAS[ferramenta_atual] == "REGADOR":
-                tile["molhado"] = True
-                if tile["estado"] == 2:
-                    tile["estado"] = 3
+    # ----- CONTROLE DE MOVIMENTO -----
+    teclas = pygame.key.get_pressed()
+    andando = False
 
-    # ----- DESENHAR -----
-    TELA.fill(VERDE)
+    if teclas[pygame.K_w]: player_y -= velocidade; andando = True
+    if teclas[pygame.K_s]: player_y += velocidade; andando = True
+    if teclas[pygame.K_a]: player_x -= velocidade; andando = True
+    if teclas[pygame.K_d]: player_x += velocidade; andando = True
 
-    # Tiles
-    for (tx, ty), tile in plantacoes.items():
-        x, y = tx * TAMANHO_TILE, ty * TAMANHO_TILE
+    player_x = max(0, min(LARGURA - player_largura, player_x))
+    player_y = max(0, min(ALTURA - player_altura, player_y))
 
-        if tile["estado"] == 1:
-            cor = TERRA_UMIDA if tile["molhado"] else MARROM
-            pygame.draw.rect(TELA, cor, (x, y, TAMANHO_TILE, TAMANHO_TILE))
+    if andando:
+        frame_count += 1
+        if frame_count >= frame_delay:
+            frame_count = 0
+            frame_index = (frame_index + 1) % len(player_frames)
+    else:
+        frame_index = 0
 
-        elif tile["estado"] == 2:
-            pygame.draw.rect(TELA, MARROM, (x, y, TAMANHO_TILE, TAMANHO_TILE))
-            pygame.draw.circle(TELA, PLANTA, (x + 25, y + 25), 10)
+    # ----- PLANTAS -----
+    for c in canteiros:
+        if c["estado"] == "plantio" and agora - c["tempo"] >= 10:
+            c["estado"] = "colheita"
+            print("🌾 Colheita pronta!")
 
-        elif tile["estado"] == 3:
-            pygame.draw.rect(TELA, MARROM, (x, y, TAMANHO_TILE, TAMANHO_TILE))
-            pygame.draw.circle(TELA, PLANTA, (x + 25, y + 25), 20)
+    # ----- VACA -----
+    if vaca_estado == 1 and agora - vaca_tempo >= 10:
+        vaca_estado = 2
+        print("🥛 A vaca produziu leite!")
 
-        if tile["molhado"]:
-            pygame.draw.circle(TELA, AZUL, (x + 40, y + 40), 6)
+    # ============================
+    # ----- DESENHO NA TELA -----
+    # ============================
 
-    # UI
-    desenhar_barra_ferramentas()
-    desenhar_inventario()
+    TELA.blit(BACKGROUND, (0, 0))
+
+    # Casa
+    TELA.blit(casa_img, (casa_x, casa_y))
+
+    # Lago (NOVO)
+    TELA.blit(lago_img, (lago_x, lago_y))
+
+    # Vaca
+    TELA.blit(vaca_imgs[vaca_estado], (vaca_x, vaca_y))
+
+    # Canteiros
+    for c in canteiros:
+        cx, cy = c["pos"]
+        TELA.blit(canteiro_img, (cx, cy))
+        if c["estado"] == "plantio":
+            TELA.blit(plantio_img, (cx, cy))
+        elif c["estado"] == "colheita":
+            TELA.blit(colheita_img, (cx, cy))
+
+    # Player
+    TELA.blit(player_frames[frame_index], (player_x, player_y))
 
     pygame.display.update()
+    clock.tick(60)
 
 pygame.quit()
